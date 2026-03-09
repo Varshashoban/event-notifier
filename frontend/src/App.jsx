@@ -26,6 +26,17 @@ const fmt = (date, time) => {
 };
 
 const isUpcoming = (date, time) => new Date(`${date}T${time}`) >= new Date();
+const getCountdown = (date, time) => {
+  const diff = new Date(`${date}T${time}`) - new Date();
+
+  if (diff <= 0) return "Started";
+
+  const days = Math.floor(diff / (1000 * 60 * 60 * 24));
+  const hours = Math.floor((diff / (1000 * 60 * 60)) % 24);
+  const minutes = Math.floor((diff / (1000 * 60)) % 60);
+
+  return `${days}d ${hours}h ${minutes}m`;
+};
 
 export default function App() {
   const [events, setEvents] = useState([]);
@@ -33,10 +44,20 @@ export default function App() {
   const [adding, setAdding] = useState(false);
   const [filter, setFilter] = useState("all");
   const [toast, setToast] = useState(null);
+  const [darkMode, setDarkMode] = useState(true);
+  const [viewMode, setViewMode] = useState("list");
+  const [, forceUpdate] = useState(0);
+
   const titleRef = useRef();
 
   useEffect(() => { api.getEvents().then(setEvents); }, []);
   useEffect(() => { if (adding) titleRef.current?.focus(); }, [adding]);
+  useEffect(() => {
+  const timer = setInterval(() => {
+    forceUpdate((n) => n + 1);
+  }, 60000); // refresh every minute
+  return () => clearInterval(timer);
+}, []);
 
   const showToast = (msg, type = "success") => {
     setToast({ msg, type });
@@ -65,19 +86,50 @@ export default function App() {
 
   const visible = events.filter((e) => filter === "all" || e.category === filter);
   const upcomingCount = events.filter((e) => isUpcoming(e.date, e.time)).length;
+  const upcomingEvents = events
+  .filter((e) => isUpcoming(e.date, e.time))
+  .sort((a, b) => new Date(`${a.date}T${a.time}`) - new Date(`${b.date}T${b.time}`))
+  .slice(0, 3);
 
   return (
-    <div style={styles.root}>
+    <div style={{
+  ...styles.root,
+  background: darkMode ? "#0e0e0e" : "#f5f5f5",
+  color: darkMode ? "#e8e8e8" : "#111"
+}}>
       <div style={styles.grain} />
       <header style={styles.header}>
-        <div>
-          <div style={styles.logo}>notifi</div>
-          <div style={styles.subhead}>{upcomingCount} upcoming event{upcomingCount !== 1 ? "s" : ""}</div>
-        </div>
-        <button style={styles.addBtn} onClick={() => setAdding(true)}>+ add event</button>
-      </header>
+  <div>
+    <div style={styles.logo}>notifi</div>
+    <div style={styles.subhead}>{upcomingCount} upcoming event{upcomingCount !== 1 ? "s" : ""}</div>
+  </div>
 
+  <div style={{display:"flex", gap:"0.6rem"}}>
+    <button style={styles.themeBtn} onClick={() => setDarkMode(!darkMode)}>
+      {darkMode ? "☀️ light" : "🌙 dark"}
+    </button>
+
+    <button style={styles.addBtn} onClick={() => setAdding(true)}>
+      + add event
+    </button>
+  </div>
+</header>
       <div style={styles.filterBar}>
+        <div style={styles.viewToggle}>
+  <button
+    style={{ ...styles.viewBtn, ...(viewMode === "list" ? styles.viewActive : {}) }}
+    onClick={() => setViewMode("list")}
+  >
+    📄 list
+  </button>
+
+  <button
+    style={{ ...styles.viewBtn, ...(viewMode === "grid" ? styles.viewActive : {}) }}
+    onClick={() => setViewMode("grid")}
+  >
+    🔲 grid
+  </button>
+</div>
         {["all", ...Object.keys(CATEGORIES)].map((cat) => (
           <button key={cat} style={{ ...styles.filterChip, ...(filter === cat ? styles.filterActive : {}) }} onClick={() => setFilter(cat)}>
             {cat === "all" ? "all" : CATEGORIES[cat].label.toLowerCase()}
@@ -85,7 +137,27 @@ export default function App() {
         ))}
       </div>
 
-      <main style={styles.main}>
+      <main
+  style={{
+    ...styles.main,
+    display: viewMode === "grid" ? "grid" : "flex",
+    gridTemplateColumns: viewMode === "grid" ? "repeat(2, 1fr)" : "none"
+  }}
+>
+        {upcomingEvents.length > 0 && (
+  <div style={styles.upcomingSection}>
+    <div style={styles.upcomingTitle}>🔥 upcoming events</div>
+
+    {upcomingEvents.map((e) => (
+      <div key={e.id} style={styles.upcomingItem}>
+        <span style={{ fontWeight: "600" }}>{e.title}</span>
+        <span style={{ color: "#9ca3af", fontSize: "0.75rem" }}>
+          ⏳ {getCountdown(e.date, e.time)}
+        </span>
+      </div>
+    ))}
+  </div>
+)}
         {visible.length === 0 && (
           <div style={styles.empty}>no events here · <span style={styles.emptyLink} onClick={() => setAdding(true)}>add one?</span></div>
         )}
@@ -107,7 +179,21 @@ export default function App() {
                 </div>
                 <div style={styles.cardMeta}>
                   <span style={{ ...styles.badge, background: cat.color + "22", color: cat.color }}>{cat.label}</span>
-                  <span style={styles.cardDate}>{fmt(e.date, e.time)}</span>
+                  <div style={{ display: "flex", flexDirection: "column" }}>
+  <span style={styles.cardDate}>{fmt(e.date, e.time)}</span>
+
+  {isUpcoming(e.date, e.time) && (
+    <span style={{
+      fontSize: "0.7rem",
+      color: "#9ca3af",
+      marginTop: "2px",
+      letterSpacing: "0.03em"
+    }}>
+      ⏳ Starts in {getCountdown(e.date, e.time)}
+    </span>
+  )}
+</div>
+
                 </div>
                 {e.note && <div style={styles.cardNote}>{e.note}</div>}
               </div>
@@ -165,6 +251,57 @@ export default function App() {
 }
 
 const styles = {
+  viewToggle: {
+  display: "flex",
+  justifyContent: "center",
+  gap: "0.5rem",
+  marginBottom: "1rem"
+},
+
+viewBtn: {
+  background: "#1a1a1a",
+  border: "1px solid #333",
+  color: "#aaa",
+  borderRadius: "6px",
+  padding: "0.3rem 0.8rem",
+  fontSize: "0.75rem",
+  cursor: "pointer"
+},
+
+viewActive: {
+  background: "#fff",
+  color: "#000"
+},
+  themeBtn: {
+  background: "#1f1f1f",
+  color: "#ddd",
+  border: "1px solid #333",
+  borderRadius: "6px",
+  padding: "0.4rem 0.8rem",
+  fontSize: "0.75rem",
+  cursor: "pointer"
+},
+  upcomingSection: {
+  background: "#141414",
+  border: "1px solid #1f1f1f",
+  borderRadius: "12px",
+  padding: "1rem",
+  marginBottom: "1rem",
+},
+
+upcomingTitle: {
+  fontSize: "0.8rem",
+  color: "#9ca3af",
+  marginBottom: "0.6rem",
+  letterSpacing: "0.05em",
+},
+
+upcomingItem: {
+  display: "flex",
+  justifyContent: "space-between",
+  fontSize: "0.8rem",
+  padding: "0.3rem 0",
+},
   root: { minHeight: "100vh", background: "#0e0e0e", color: "#e8e8e8", fontFamily: "'DM Mono', 'Courier New', monospace", position: "relative", overflow: "hidden" },
   grain: { position: "fixed", inset: 0, backgroundImage: "url(\"data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.04'/%3E%3C/svg%3E\")", pointerEvents: "none", zIndex: 0 },
   header: { display: "flex", alignItems: "center", justifyContent: "space-between", padding: "2rem 2rem 1rem", position: "relative", zIndex: 1 },
